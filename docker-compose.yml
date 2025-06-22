@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:MySecurePassword123@db:5432/goit_db
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=your-secret-key
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - MAIL_SERVER=sandbox.smtp.mailtrap.io
+      - MAIL_PORT=2525
+      - MAIL_USERNAME=2c7e77f4bf1871
+      - MAIL_PASSWORD=ec44cd50d0abac
+      - MAIL_FROM=noreply@yourdomain.com
+      - MAIL_STARTTLS=True
+      - MAIL_SSL_TLS=False
+      - CLOUD_NAME=dhhzs2ozh
+      - CLOUD_API_KEY=369299623149662
+      - CLOUD_API_SECRET=-w1dS3QkAZTT-JHGD_pOwvG4rHg
+      - ALLOWED_ORIGINS=*
+
+  db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=MySecurePassword123
+      - POSTGRES_DB=goit_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d goit_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:6.2-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
