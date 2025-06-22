@@ -1,3 +1,7 @@
+"""
+Routes for managing user contacts: create, read, update, delete, and search contacts.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.src.database import get_db
@@ -10,8 +14,9 @@ from app.src.repository.contacts import get_contact
 from datetime import date, timedelta
 from typing import List   
 
-router = APIRouter(prefix="/contacts", tags=["contacts"])
+router = APIRouter(tags=["contacts"])  
 
+# CREATE CONTACT ENDPOINT
 @router.post("/", response_model=ContactResponse)
 async def create_contact(
     body: ContactModel,
@@ -24,6 +29,7 @@ async def create_contact(
     contact = await repository_contacts.create_contact(body, current_user.id, db)
     return contact
 
+# GET CONTACTS ENDPOINT (paginated)
 @router.get("/", response_model=List[ContactResponse])
 async def get_contacts(
     skip: int = 0,
@@ -37,6 +43,7 @@ async def get_contacts(
     contacts = await repository_contacts.get_contacts(current_user.id, skip, limit, db)
     return contacts
 
+# GET SINGLE CONTACT ENDPOINT
 @router.get(
     "/{contact_id}",
     response_model=ContactResponse,
@@ -56,6 +63,7 @@ async def read_contact(
         )
     return contact
 
+# UPDATE CONTACT ENDPOINT
 @router.put("/{contact_id}", response_model=ContactResponse)
 async def update_contact(
     contact_id: int,
@@ -71,6 +79,7 @@ async def update_contact(
         raise HTTPException(status_code=404, detail="Contact not found")
     return contact
 
+# DELETE CONTACT ENDPOINT
 @router.delete("/{contact_id}", response_model=dict)
 async def delete_contact(
     contact_id: int,
@@ -85,6 +94,7 @@ async def delete_contact(
         raise HTTPException(status_code=404, detail="Contact not found")
     return {"message": "Contact deleted successfully"}
 
+# SEARCH CONTACTS ENDPOINT
 @router.get("/search/", response_model=List[ContactResponse])
 async def search_contacts(
     query: str = Query(..., min_length=1),
@@ -97,6 +107,7 @@ async def search_contacts(
     contacts = await repository_contacts.search_contacts(db, query, current_user.id)
     return contacts
 
+# UPCOMING BIRTHDAYS ENDPOINT
 @router.get("/upcoming_birthdays/", response_model=List[ContactResponse])
 async def get_upcoming_birthdays(
     db: AsyncSession = Depends(get_db),

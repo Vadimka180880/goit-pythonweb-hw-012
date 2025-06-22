@@ -7,7 +7,7 @@ This is the documentation for the REST API application created for GoIT homework
    :maxdepth: 2
    :caption: Contents:
 
-Main Modules
+pip install httpxMain Modules
 ============
 - :mod:`app.main` — Main FastAPI configuration file.
 - :mod:`app.src.routes.auth` — Authentication routes.

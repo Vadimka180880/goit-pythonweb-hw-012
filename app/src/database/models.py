@@ -1,5 +1,6 @@
 """
 SQLAlchemy ORM models for User and Contact tables.
+Defines User (with role) and Contact models and their relationships.
 """
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
@@ -16,6 +17,7 @@ class User(Base):
     password = Column(String)
     confirmed = Column(Boolean, default=False)
     avatar = Column(String, nullable=True)
+    role = Column(String, default="user")  # user/admin
     contacts = relationship("Contact", back_populates="owner")  
 
 class Contact(Base):  

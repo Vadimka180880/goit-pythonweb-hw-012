@@ -1,5 +1,6 @@
 """
 Database configuration and session management for SQLAlchemy async engine.
+Provides async session dependency for FastAPI routes and repositories.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine

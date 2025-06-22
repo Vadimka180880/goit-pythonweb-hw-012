@@ -1,5 +1,6 @@
 """
 Service functions for sending emails and generating verification tokens.
+Includes: verification token creation, email sending, password reset email, and template loading.
 """
 from aiosmtplib import SMTP
 from email.mime.text import MIMEText
@@ -15,6 +16,8 @@ from email_validator import validate_email, EmailNotValidError
 
 logger = logging.getLogger(__name__)
 
+# VERIFICATION TOKEN GENERATION
+
 def create_verification_token(user_id: int) -> str:
     """
     Generate a JWT token for email verification.
@@ -25,6 +28,8 @@ def create_verification_token(user_id: int) -> str:
         "type": "email_verification"
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+# EMAIL SENDING
 
 async def send_email(email_to: str, subject: str, template_name: str, template_vars: dict) -> bool:
     """
@@ -72,7 +77,7 @@ async def send_verification_email(email: str, user_id: int) -> bool:
     token = create_verification_token(user_id)
     return await send_email(
         email_to=email,
-        subject="Підтвердження email у системі GOIT",
+        subject="Email confirmation in GOIT system",
         template_name="verification_email.html",
         template_vars={"verification_link": f"http://localhost:8000/auth/verify-email?token={token}", "support_email": "support@goit.com"}
     )
@@ -80,7 +85,7 @@ async def send_verification_email(email: str, user_id: int) -> bool:
 async def send_password_reset_email(email: str, reset_token: str) -> bool:
     return await send_email(
         email_to=email,
-        subject="Відновлення паролю GOIT",
+        subject="Password reset in GOIT system",
         template_name="reset_password.html",
         template_vars={"reset_link": f"{settings.frontend_url}/reset-password?token={reset_token}", "expiration_hours": "24", "support_email": settings.mail_from}
     )
@@ -92,6 +97,8 @@ def create_password_reset_token(email: str) -> str:
         "type": "password_reset"
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+# TEMPLATE LOADING
 
 @lru_cache(maxsize=32)
 def load_template(template_name: str) -> str:

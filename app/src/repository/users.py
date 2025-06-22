@@ -1,5 +1,5 @@
 """
-Repository functions for managing users in the database.
+Repository functions for managing users in the database: CRUD, avatar, and email verification.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from app.src.services.cloudinary_service import upload_avatar
 logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# USER RETRIEVAL
 async def get_user_by_email(email: str, db: AsyncSession) -> User | None:
     """
     Retrieve a user by email address.
@@ -28,6 +29,7 @@ async def get_user_by_email(email: str, db: AsyncSession) -> User | None:
     result = await db.execute(select(User).where(User.email == email))
     return result.scalars().first()
 
+# USER CREATION
 async def create_user(user: UserCreate, db: AsyncSession) -> User:
     """
     Create a new user and send a verification email.
@@ -45,7 +47,6 @@ async def create_user(user: UserCreate, db: AsyncSession) -> User:
     await db.commit()
     await db.refresh(db_user)
 
-    # Send verification email
     try:
         token = create_access_token(
             data={"sub": user.email},
@@ -58,6 +59,7 @@ async def create_user(user: UserCreate, db: AsyncSession) -> User:
 
     return db_user  
 
+# AVATAR MANAGEMENT
 async def update_user_avatar(user_id: int, avatar_url: str, db: AsyncSession):
     """
     Update the avatar URL for a user by user ID.
@@ -74,9 +76,9 @@ async def update_avatar(self, email: str, url: str):
     """
     Update the avatar URL for a user by email (method stub).
     """
-    # ...implementation needed...
     pass
 
+# USER RETRIEVAL BY ID
 async def get_user_by_id(user_id: int, db: AsyncSession) -> Optional[User]:
     """
     Retrieve a user by their unique ID.

@@ -1,3 +1,7 @@
+"""
+Authentication and authorization service functions: password hashing, JWT, user retrieval, admin check, avatar, and password reset.
+"""
+
 from fastapi.security import OAuth2PasswordBearer
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -17,6 +21,8 @@ from app.src.schemas.users import UserModel
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/auth/login")
 security = HTTPBearer()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# PASSWORD HASHING
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
@@ -43,6 +49,8 @@ def get_password_hash(password: str) -> str:
     """
     return pwd_context.hash(password)
 
+# JWT TOKEN GENERATION
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
     Generates a JWT access token.
@@ -62,20 +70,34 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.jwt_algorithm)
 
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """
+    Generates a JWT refresh token.
+
+    Args:
+        data (dict): Data to encode in the token (e.g., email).
+        expires_delta (Optional[timedelta]): Token lifetime (default 7 days).
+
+    Returns:
+        str: Encoded JWT refresh token.
+
+    Raises:
+        JWTError: If encoding fails.
+    """
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(days=7))
+    to_encode.update({"exp": expire, "type": "refresh"})
+    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+# USER RETRIEVAL & CACHING
+
 async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> User:
     """
     Gets the currently authenticated user based on the JWT token.
-
-    Args:
-        token (str): JWT token from the Authorization header.
-        db (AsyncSession): Async database session.
-
-    Returns:
-        User: User object.
-
-    Raises:
-        HTTPException: If the token is invalid or user not found.
+    Uses Redis cache for user data if available.
     """
+    from app.src.database.redis import get_redis
+    import json
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -89,13 +111,56 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     except JWTError:
         raise credentials_exception
 
+    redis_conn = None
+    try:
+        async for r in get_redis():
+            redis_conn = r
+            break
+        cache_key = f"user:{email}"
+        cached_user = await redis_conn.get(cache_key)
+        if cached_user:
+            user_dict = json.loads(cached_user)
+            user = User(**user_dict)
+            return user
+    except Exception:
+        pass  # Ignore cache if Redis is unavailable
+
     stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
     user = result.scalars().first()
-    
     if user is None:
         raise credentials_exception
+    try:
+        if redis_conn and user:
+            await redis_conn.set(cache_key, user.model_dump_json(), ex=300)  # 5 minutes
+    except Exception:
+        pass
     return user
+
+async def get_current_user_from_refresh(token: str = Depends(oauth2_scheme)) -> User:
+    """
+    Gets user from refresh token.
+
+    Args:
+        token (str): JWT refresh token.
+
+    Returns:
+        User: Decoded user information.
+
+    Raises:
+        HTTPException: If the token is invalid or the user cannot be found.
+    """
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid refresh token type")
+        email = payload.get("sub")
+        if not email:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+        # No DB here for simplicity, but can be added
+        return email
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
 
 def decode_token(token: str) -> Dict[str, Any]:
     """
@@ -117,6 +182,19 @@ def decode_token(token: str) -> Dict[str, Any]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Token validation failed: {str(e)}"
         )
+
+# ADMIN ROLE CHECK
+
+async def get_current_active_admin(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Dependency to check if current user is admin.
+    Raises 403 if not admin.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return current_user
+
+# AVATAR MANAGEMENT
 
 async def update_avatar(email: str, file: UploadFile, db: AsyncSession):
     """
@@ -151,6 +229,8 @@ async def update_avatar(email: str, file: UploadFile, db: AsyncSession):
     await db.refresh(user)
     
     return {"message": "Avatar updated successfully"}
+
+# PASSWORD RESET
 
 async def get_user_by_email(email: str, db: AsyncSession) -> Optional[User]:
     """

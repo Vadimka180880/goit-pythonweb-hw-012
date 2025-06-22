@@ -18,6 +18,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     confirmed: bool = False
     avatar: str | None
+    role: str = "user"
     class Config:
         from_attributes = True      
 

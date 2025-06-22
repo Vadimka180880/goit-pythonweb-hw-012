@@ -1,3 +1,7 @@
+"""
+Routes for authentication, registration, email verification, password reset, and user profile management.
+"""
+
 from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -23,25 +27,10 @@ from sqlalchemy.orm import Session
 from app.src.database.redis import get_redis
 from app.src.database.base import get_db
 
-router = APIRouter(prefix="/auth", tags=["auth"])  
+router = APIRouter(tags=["auth"])  
 logger = logging.getLogger(__name__)
 
-@router.get("/verify/{verification_code}")
-async def verify_email_endpoint(verification_code: str, db: Session = Depends(get_db)):
-    """
-    Confirms the user's email by the verification code.
-
-    Args:
-        verification_code (str): The verification code received in the email.
-        db (Session): Database session.
-
-    Returns:
-        dict: Message about the verification result.
-
-    Raises:
-        HTTPException: If the code is invalid or an error occurred.
-    """
-    return await verify_email(verification_code, db)
+# AUTHENTICATION & REGISTRATION ENDPOINTS
 
 @router.post(
     "/signup",
@@ -157,6 +146,25 @@ async def login(
             detail="Internal server error"
         )
 
+# EMAIL VERIFICATION ENDPOINT
+
+@router.get("/verify/{verification_code}")
+async def verify_email_endpoint(verification_code: str, db: Session = Depends(get_db)):
+    """
+    Confirms the user's email by the verification code.
+
+    Args:
+        verification_code (str): The verification code received in the email.
+        db (Session): Database session.
+
+    Returns:
+        dict: Message about the verification result.
+
+    Raises:
+        HTTPException: If the code is invalid or an error occurred.
+    """
+    return await verify_email(verification_code, db)
+
 @router.get(
     "/verify-email",
     summary="Verify email",
@@ -224,6 +232,8 @@ async def verify_email(
             detail="Failed to verify email"
         )
 
+# USER PROFILE ENDPOINTS
+
 @router.get(
     "/me",
     response_model=UserResponse,
@@ -247,6 +257,8 @@ async def get_current_user_profile(
         HTTPException: If access is restricted.
     """
     return UserResponse.from_orm(current_user)
+
+# AVATAR MANAGEMENT ENDPOINT
 
 @router.patch(
     "/avatar",
@@ -283,6 +295,8 @@ async def update_avatar(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update avatar"
         )
+
+# PASSWORD RESET ENDPOINTS
 
 @router.post(
     "/password-reset-request",
@@ -376,54 +390,32 @@ async def reset_password(
             detail="Failed to reset password"
         )
 
-@router.get(
-    "/test-redis",
-    summary="Test Redis connection"
-)
-async def test_redis(redis=Depends(get_redis)):
-    """
-    Tests the connection to Redis.
-
-    Args:
-        redis: Dependency for Redis client.
-
-    Returns:
-        dict: Test result (key value).
-
-    Raises:
-        HTTPException: If the connection failed.
-    """
-    try:
-        await redis.set("test_key", "Hello, Redis!")
-        value = await redis.get("test_key")
-        return {"message": value.decode("utf-8") if value else "No value found"}
-    except Exception as e:
-        logger.error(f"Redis error: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to test Redis"
-        )
+# TOKEN REFRESH ENDPOINT
 
 @router.post(
-    "/auth/login",
+    "/refresh-token",
     response_model=dict,
-    include_in_schema=False
+    summary="Refresh JWT tokens",
+    description="Returns new access and refresh tokens using a valid refresh token."
 )
-async def swagger_login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+async def refresh_token(
+    token: str,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Alternative endpoint for login via Swagger (hidden in the schema).
-
-    Args:
-        form_data (OAuth2PasswordRequestForm): Form with email and password.
-        db (AsyncSession): Async database session.
-
-    Returns:
-        dict: Token and user data.
-
-    Raises:
-        HTTPException: If authentication failed.
+    Refreshes JWT tokens using a valid refresh token.
     """
-    return await login(form_data, db)
+    from app.src.services.auth import get_current_user_from_refresh, create_access_token, create_refresh_token
+    try:
+        email = await get_current_user_from_refresh(token)
+        from app.src.repository.users import get_user_by_email
+        user = await get_user_by_email(email, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        access_token = create_access_token({"sub": user.email})
+        refresh_token = create_refresh_token({"sub": user.email})
+        return {"access_token": access_token, "refresh_token": refresh_token}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")

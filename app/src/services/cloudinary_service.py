@@ -1,5 +1,6 @@
 """
 Service functions for uploading files to Cloudinary.
+Includes: avatar upload with validation and error handling.
 """
 
 import cloudinary
@@ -12,6 +13,7 @@ from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
+# CLOUDINARY CONFIGURATION
 # Initialize Cloudinary
 cloudinary.config(
     cloud_name=settings.cloud_name,
@@ -20,6 +22,7 @@ cloudinary.config(
     secure=True
 )
 
+# AVATAR UPLOAD
 async def upload_avatar(file: UploadFile, user_email: str) -> str:
     """
     Upload an avatar image to Cloudinary with error handling and validation.
