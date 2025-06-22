@@ -1,8 +1,15 @@
+"""
+Pydantic models for contact-related schemas.
+"""
+
 from pydantic import BaseModel, EmailStr
 from datetime import date
 from typing import Optional
 
 class ContactBase(BaseModel):
+    """
+    Base schema for contact information.
+    """
     first_name: str
     last_name: str
     email: EmailStr
@@ -11,9 +18,15 @@ class ContactBase(BaseModel):
     additional_info: Optional[str] = None
 
 class ContactCreate(ContactBase):
+    """
+    Schema for creating a new contact.
+    """
     pass
 
 class ContactUpdate(BaseModel):
+    """
+    Schema for updating contact information.
+    """
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -22,12 +35,18 @@ class ContactUpdate(BaseModel):
     additional_info: Optional[str] = None
 
 class ContactResponse(ContactBase):
+    """
+    Schema for returning contact information in responses.
+    """
     id: int
 
     class Config:
         from_attributes = True
 
 class ContactModel(BaseModel):
+    """
+    Schema for contact model with example.
+    """
     first_name: str
     last_name: str
     email: EmailStr

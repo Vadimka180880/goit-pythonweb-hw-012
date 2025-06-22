@@ -1,3 +1,6 @@
+"""
+Service functions for sending emails and generating verification tokens.
+"""
 from aiosmtplib import SMTP
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -13,6 +16,9 @@ from email_validator import validate_email, EmailNotValidError
 logger = logging.getLogger(__name__)
 
 def create_verification_token(user_id: int) -> str:
+    """
+    Generate a JWT token for email verification.
+    """
     payload = {
         "sub": str(user_id),
         "exp": datetime.utcnow() + timedelta(hours=24),
@@ -21,6 +27,9 @@ def create_verification_token(user_id: int) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 async def send_email(email_to: str, subject: str, template_name: str, template_vars: dict) -> bool:
+    """
+    Send an email using a template and SMTP server.
+    """
     try:
         if not settings.mail_test_mode:
             try:

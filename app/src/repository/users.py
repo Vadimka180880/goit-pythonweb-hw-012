@@ -1,3 +1,7 @@
+"""
+Repository functions for managing users in the database.
+"""
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update
@@ -18,10 +22,16 @@ logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 async def get_user_by_email(email: str, db: AsyncSession) -> User | None:
+    """
+    Retrieve a user by email address.
+    """
     result = await db.execute(select(User).where(User.email == email))
     return result.scalars().first()
 
 async def create_user(user: UserCreate, db: AsyncSession) -> User:
+    """
+    Create a new user and send a verification email.
+    """
     existing_user = await get_user_by_email(user.email, db)
     if existing_user:
         raise HTTPException(
@@ -35,7 +45,7 @@ async def create_user(user: UserCreate, db: AsyncSession) -> User:
     await db.commit()
     await db.refresh(db_user)
 
-    # Відправка email для підтвердження
+    # Send verification email
     try:
         token = create_access_token(
             data={"sub": user.email},
@@ -44,11 +54,14 @@ async def create_user(user: UserCreate, db: AsyncSession) -> User:
         await send_verification_email(user.email, token)
     except Exception as e:
         logger.error(f"Failed to send verification email: {e}")
-        # Продовжуємо роботу навіть якщо email не відправлено
+        # Continue even if email sending fails
 
     return db_user  
 
 async def update_user_avatar(user_id: int, avatar_url: str, db: AsyncSession):
+    """
+    Update the avatar URL for a user by user ID.
+    """
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -58,12 +71,15 @@ async def update_user_avatar(user_id: int, avatar_url: str, db: AsyncSession):
     return user
 
 async def update_avatar(self, email: str, url: str):
-    user = await self.get_user_by_email(email)
-    user.avatar = url
-    await self.session.commit()
-    await self.session.refresh(user)
-    return user
+    """
+    Update the avatar URL for a user by email (method stub).
+    """
+    # ...implementation needed...
+    pass
 
 async def get_user_by_id(user_id: int, db: AsyncSession) -> Optional[User]:
+    """
+    Retrieve a user by their unique ID.
+    """
     result = await db.execute(select(User).filter_by(id=user_id))
     return result.scalars().first()

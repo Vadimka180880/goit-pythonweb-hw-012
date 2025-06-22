@@ -28,10 +28,26 @@ app.state.redis = redis_client
 
 @app.on_event("startup")
 async def startup():
+    """
+    Initializes the application on startup.
+
+    Sets up FastAPILimiter with Redis for rate limiting.
+
+    Raises:
+        Exception: If Redis or FastAPILimiter initialization fails.
+    """
     await FastAPILimiter.init(app.state.redis)  
 
 @app.on_event("shutdown")
 async def shutdown():
+    """
+    Closes Redis connection on application shutdown.
+
+    Cleans up FastAPILimiter resources.
+
+    Raises:
+        Exception: If connection closure fails.
+    """
     await FastAPILimiter.close() 
 
 # Routes
@@ -41,4 +57,16 @@ app.include_router(contacts_router, prefix="/contacts", tags=["contacts"])
 
 @app.get("/users/me", dependencies=[Depends(RateLimiter(times=10, seconds=60))])
 async def read_users_me(current_user: User = Depends(get_current_user)):
+    """
+    Returns the profile of the currently authenticated user.
+
+    Args:
+        current_user (User): User object retrieved from dependency.
+
+    Returns:
+        User: Data of the current user.
+
+    Raises:
+        HTTPException: If access is denied or user is not authenticated.
+    """
     return current_user

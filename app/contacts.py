@@ -1,3 +1,7 @@
+"""
+Contacts API endpoints for creating and reading user contacts.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select  
@@ -14,6 +18,9 @@ async def create_contact(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Create a new contact for the current user.
+    """
     db_contact = Contact(**contact.dict(), user_id=current_user.id)
     db.add(db_contact)
     await db.commit()
@@ -27,6 +34,9 @@ async def read_contacts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Get a list of contacts for the current user with pagination.
+    """
     result = await db.execute(
         select(Contact)
         .where(Contact.user_id == current_user.id)

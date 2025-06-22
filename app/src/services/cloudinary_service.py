@@ -1,3 +1,7 @@
+"""
+Service functions for uploading files to Cloudinary.
+"""
+
 import cloudinary
 import cloudinary.uploader
 from fastapi import UploadFile, HTTPException
@@ -8,7 +12,7 @@ from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
-# Ініціалізація Cloudinary
+# Initialize Cloudinary
 cloudinary.config(
     cloud_name=settings.cloud_name,
     api_key=settings.cloud_api_key,
@@ -18,36 +22,36 @@ cloudinary.config(
 
 async def upload_avatar(file: UploadFile, user_email: str) -> str:
     """
-    Завантажує аватар на Cloudinary з обробкою помилок та перевірками.
-    
+    Upload an avatar image to Cloudinary with error handling and validation.
+
     Args:
-        file: Файл аватара (UploadFile)
-        user_email: Email користувача для унікального імені файла
-        
+        file (UploadFile): The avatar file to upload.
+        user_email (str): The user's email for unique file naming.
+
     Returns:
-        URL завантаженого аватара
-        
+        str: URL of the uploaded avatar.
+
     Raises:
-        HTTPException: У разі помилки завантаження
+        HTTPException: If upload fails or file is empty.
     """
     try:
-        # Читаємо вміст файлу
+        # Read file contents
         contents = await file.read()
         
-        # Перевірка, чи файл не порожній
+        # Check if file is not empty
         if not contents:
             raise HTTPException(
                 status_code=400,
-                detail="Файл порожній"
+                detail="File is empty"
             )
         
-        # Створюємо BytesIO з вмістом файлу
+        # Create BytesIO from file contents
         file_bytes = BytesIO(contents)
         
-        # Генеруємо унікальне public_id
+        # Generate unique public_id
         public_id = f"avatars/{user_email.replace('@', '_at_').replace('.', '_dot_')}"
         
-        # Завантаження на Cloudinary
+        # Upload to Cloudinary
         result = cloudinary.uploader.upload(
             file_bytes,
             public_id=public_id,
@@ -58,31 +62,10 @@ async def upload_avatar(file: UploadFile, user_email: str) -> str:
                 {"width": 250, "height": 250, "crop": "fill"},
                 {"quality": "auto:good"}
             ],
-            allowed_formats=["jpg", "png", "jpeg"],
-            format="jpg"  # Конвертуємо всі зображення в JPG для уніфікації
         )
         
-        if not result.get('secure_url'):
-            raise HTTPException(
-                status_code=500,
-                detail="Не вдалося отримати URL аватара"
-            )
-            
-        return result['secure_url']
+        return result["secure_url"]
     
-    except cloudinary.exceptions.Error as e:
-        logger.error(f"Cloudinary error: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Помилка Cloudinary: {str(e)}"
-        )
-        
-    except HTTPException:
-        raise
-        
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Внутрішня помилка сервера при завантаженні аватара"
-        )
+        logger.error(f"Cloudinary upload error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload avatar to Cloudinary")

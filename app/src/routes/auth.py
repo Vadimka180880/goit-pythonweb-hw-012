@@ -28,6 +28,19 @@ logger = logging.getLogger(__name__)
 
 @router.get("/verify/{verification_code}")
 async def verify_email_endpoint(verification_code: str, db: Session = Depends(get_db)):
+    """
+    Confirms the user's email by the verification code.
+
+    Args:
+        verification_code (str): The verification code received in the email.
+        db (Session): Database session.
+
+    Returns:
+        dict: Message about the verification result.
+
+    Raises:
+        HTTPException: If the code is invalid or an error occurred.
+    """
     return await verify_email(verification_code, db)
 
 @router.post(
@@ -42,6 +55,20 @@ async def signup(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Registers a new user.
+
+    Args:
+        user_data (UserCreate): Registration data (email, password).
+        background_tasks (BackgroundTasks): Tasks for sending email in the background.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        UserResponse: New user's data.
+
+    Raises:
+        HTTPException: If the email is already registered or an error occurred.
+    """
     try:
         existing_user = await get_user_by_email(user_data.email, db)
         if existing_user:
@@ -88,6 +115,19 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Authenticates a user.
+
+    Args:
+        form_data (OAuth2PasswordRequestForm): Form with email and password.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        dict: Access token and user data.
+
+    Raises:
+        HTTPException: If authentication failed.
+    """
     try:        
         user = await get_user_by_email(form_data.username, db)
         if not user or not verify_password(form_data.password, user.password):
@@ -126,6 +166,19 @@ async def verify_email(
     token: str,
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Confirms email by JWT token.
+
+    Args:
+        token (str): Verification token.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        dict: Result message.
+
+    Raises:
+        HTTPException: If the token is invalid, expired, or an error occurred.
+    """
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
         user_id = payload.get("sub")
@@ -181,6 +234,18 @@ async def verify_email(
 async def get_current_user_profile(
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Returns the profile of the currently authenticated user.
+
+    Args:
+        current_user (User): The current user object.
+
+    Returns:
+        UserResponse: Profile data.
+
+    Raises:
+        HTTPException: If access is restricted.
+    """
     return UserResponse.from_orm(current_user)
 
 @router.patch(
@@ -194,6 +259,20 @@ async def update_avatar(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Updates the user's avatar.
+
+    Args:
+        file (UploadFile): Uploaded avatar file.
+        current_user (User): Current user.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        UserResponse: Updated user data.
+
+    Raises:
+        HTTPException: If the update failed.
+    """
     try:
         avatar_url = await upload_avatar(file, current_user.email)
         updated_user = await update_user_avatar(current_user.id, avatar_url, db)
@@ -216,6 +295,20 @@ async def request_password_reset(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Requests a password reset.
+
+    Args:
+        user_email (UserEmailSchema): Email for password reset.
+        background_tasks (BackgroundTasks): Tasks for sending email.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        dict: Message about sending.
+
+    Raises:
+        HTTPException: If an error occurred.
+    """
     try:
         user = await get_user_by_email(user_email.email, db)
         if not user:
@@ -246,6 +339,19 @@ async def reset_password(
     reset_data: ResetPasswordSchema,
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Resets the user's password.
+
+    Args:
+        reset_data (ResetPasswordSchema): Token and new password.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        dict: Success message.
+
+    Raises:
+        HTTPException: If the token is invalid or an error occurred.
+    """
     try:
         if not reset_data.token or not reset_data.new_password:
             raise HTTPException(
@@ -275,6 +381,18 @@ async def reset_password(
     summary="Test Redis connection"
 )
 async def test_redis(redis=Depends(get_redis)):
+    """
+    Tests the connection to Redis.
+
+    Args:
+        redis: Dependency for Redis client.
+
+    Returns:
+        dict: Test result (key value).
+
+    Raises:
+        HTTPException: If the connection failed.
+    """
     try:
         await redis.set("test_key", "Hello, Redis!")
         value = await redis.get("test_key")
@@ -295,4 +413,17 @@ async def swagger_login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Alternative endpoint for login via Swagger (hidden in the schema).
+
+    Args:
+        form_data (OAuth2PasswordRequestForm): Form with email and password.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        dict: Token and user data.
+
+    Raises:
+        HTTPException: If authentication failed.
+    """
     return await login(form_data, db)
