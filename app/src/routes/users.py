@@ -4,6 +4,7 @@ Routes for user-related operations.
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.src.database.models import User
 from app.src.services.auth import get_current_user, get_current_active_admin
@@ -26,9 +27,9 @@ async def get_all_users(db: AsyncSession = Depends(get_db)):
     Get a list of all users (admin only).
     Returns a list of user response models.
     """
-    result = await db.execute("SELECT * FROM users")
-    users = result.fetchall()
-    return [UserResponse.from_orm(User(**dict(row))) for row in users]
+    result = await db.execute(select(User))
+    users = result.scalars().all()
+    return [UserResponse.from_orm(user) for user in users]
 
 @router.get("/")
 async def read_users():

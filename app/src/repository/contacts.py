@@ -13,14 +13,22 @@ async def get_contacts(user_id: int, skip: int, limit: int, db: AsyncSession):
     """
     Retrieve a paginated list of contacts for a specific user.
     """
-    return db.query(Contact).filter(Contact.user_id == user_id).offset(skip).limit(limit).all()
+    result = await db.execute(
+        select(Contact).where(Contact.user_id == user_id).offset(skip).limit(limit)
+    )
+    return result.scalars().all()
 
 # CREATE CONTACT
 async def create_contact(body: ContactModel, user_id: int, db: AsyncSession):
     """
     Create a new contact for a user.
     """
-    contact = Contact(**body.dict(), user_id=user_id)
+    contact = Contact(
+        name=f"{body.first_name} {body.last_name}",
+        email=body.email,
+        phone=body.phone_number,
+        user_id=user_id
+    )
     db.add(contact)
     await db.commit()
     await db.refresh(contact)

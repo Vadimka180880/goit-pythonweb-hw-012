@@ -9,6 +9,7 @@ class UserCreate(BaseModel):
     """
     email: EmailStr 
     password: str   
+    role: str = "user"
 
 class UserResponse(BaseModel): 
     """
@@ -56,3 +57,9 @@ class UserModel(BaseModel):
                 "password": "string"
             }
         }
+
+class RefreshTokenRequest(BaseModel):
+    """
+    Schema for refresh token request.
+    """
+    token: str

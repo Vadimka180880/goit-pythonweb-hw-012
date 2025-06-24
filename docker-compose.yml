@@ -13,7 +13,7 @@ services:
       redis:
         condition: service_started
     environment:
-      - DATABASE_URL=postgresql+asyncpg://user:MySecurePassword123@db:5432/goit_db
+      - DATABASE_URL=postgresql+asyncpg://user:VS010203@db:5432/goit_hw_12
       - REDIS_URL=redis://redis:6379
       - SECRET_KEY=your-secret-key
       - JWT_ALGORITHM=HS256
@@ -31,17 +31,17 @@ services:
       - ALLOWED_ORIGINS=*
 
   db:
-    image: postgres:13
+    image: postgres:16
     environment:
       - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=MySecurePassword123
-      - POSTGRES_DB=goit_db
+      - POSTGRES_PASSWORD=VS010203
+      - POSTGRES_DB=goit_hw_12
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d goit_db"]
+      test: ["CMD-SHELL", "pg_isready -U user -d goit_hw_12"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -55,6 +55,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  alembic:
+    build: .
+    command: alembic upgrade head
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:VS010203@db:5432/goit_hw_12
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    working_dir: /app
 
 volumes:
   postgres_data:

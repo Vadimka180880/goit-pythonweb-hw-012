@@ -17,6 +17,7 @@ from app.src.database.database import get_db
 import secrets
 from app.src.services.email import send_verification_email
 from app.src.schemas.users import UserModel
+import uuid
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/auth/login")
 security = HTTPBearer()
@@ -72,7 +73,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
-    Generates a JWT refresh token.
+    Generates a JWT refresh token with unique jti for rotation and revocation.
 
     Args:
         data (dict): Data to encode in the token (e.g., email).
@@ -86,8 +87,57 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
     """
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(days=7))
-    to_encode.update({"exp": expire, "type": "refresh"})
+    jti = str(uuid.uuid4())
+    to_encode.update({"exp": expire, "type": "refresh", "jti": jti})
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+async def store_refresh_token(jti: str, email: str, expires_in: int = 604800):
+    """
+    Store refresh token jti in Redis for revocation and rotation.
+
+    Args:
+        jti (str): JWT ID for the refresh token.
+        email (str): User's email.
+        expires_in (int): Expiration time in seconds (default 7 days).
+
+    Returns:
+        None
+    """
+    from app.src.database.redis import get_redis
+    async for redis_conn in get_redis():
+        await redis_conn.set(f"refresh:{jti}", email, ex=expires_in)
+        break
+
+async def revoke_refresh_token(jti: str):
+    """
+    Remove refresh token jti from Redis (revoke).
+
+    Args:
+        jti (str): JWT ID for the refresh token.
+
+    Returns:
+        None
+    """
+    from app.src.database.redis import get_redis
+    async for redis_conn in get_redis():
+        await redis_conn.delete(f"refresh:{jti}")
+        break
+
+async def is_refresh_token_active(jti: str) -> bool:
+    """
+    Check if refresh token jti is active in Redis.
+
+    Args:
+        jti (str): JWT ID for the refresh token.
+
+    Returns:
+        bool: True if the token is active, False otherwise.
+    """
+    from app.src.database.redis import get_redis
+    async for redis_conn in get_redis():
+        exists = await redis_conn.exists(f"refresh:{jti}")
+        return bool(exists)
+    return False
 
 # USER RETRIEVAL & CACHING
 
@@ -274,7 +324,7 @@ async def reset_user_password(token: str, new_password: str, db: AsyncSession) -
         if not user:
             return None
         
-        user.hashed_password = pwd_context.hash(new_password)
+        user.password = pwd_context.hash(new_password)
         await db.commit()
         await db.refresh(user)
         return user
@@ -300,7 +350,6 @@ async def create_user(body: UserModel, db: AsyncSession = Depends(get_db)):
     if existing_user:
         raise HTTPException(status_code=409, detail="Email already registered")
     hashed_password = pwd_context.hash(body.password)
-    verification_code = secrets.token_urlsafe(32)
     user = User(email=body.email, password=hashed_password, confirmed=False, verification_code=verification_code)
     db.add(user)
     db.commit()

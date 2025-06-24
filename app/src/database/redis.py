@@ -3,7 +3,7 @@ from app.src.config.config import settings
 
 async def get_redis():
     redis_connection = await redis.Redis.from_url(
-        settings.REDIS_URL,
+        settings.effective_redis_url, 
         decode_responses=True
     )
     try:

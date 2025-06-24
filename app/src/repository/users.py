@@ -31,22 +31,29 @@ async def get_user_by_email(email: str, db: AsyncSession) -> User | None:
 
 # USER CREATION
 async def create_user(user: UserCreate, db: AsyncSession) -> User:
-    """
-    Create a new user and send a verification email.
-    """
+    def debug(msg):
+        with open("debug_user.txt", "a") as f:
+            f.write(msg + "\n")
+    debug(f"CREATE_USER CALLED: {user}")
     existing_user = await get_user_by_email(user.email, db)
+    debug(f"EXISTING_USER: {existing_user}")
     if existing_user:
+        debug("USER ALREADY EXISTS")
         raise HTTPException(
             status_code=400,
             detail="Email already registered"
         )
-
+    debug("BEFORE HASH")
     hashed_password = pwd_context.hash(user.password)
-    db_user = User(email=user.email, password=hashed_password)
+    debug(f"HASHED_PASSWORD: {hashed_password}")
+    db_user = User(email=user.email, password=hashed_password, role=getattr(user, 'role', 'user'))
+    debug(f"DB_USER: {db_user}")
     db.add(db_user)
+    debug("BEFORE COMMIT")
     await db.commit()
+    debug("AFTER COMMIT")
     await db.refresh(db_user)
-
+    debug(f"AFTER REFRESH: {db_user}")
     try:
         token = create_access_token(
             data={"sub": user.email},
@@ -54,9 +61,10 @@ async def create_user(user: UserCreate, db: AsyncSession) -> User:
         )
         await send_verification_email(user.email, token)
     except Exception as e:
+        debug(f"EMAIL EXCEPTION: {e}")
         logger.error(f"Failed to send verification email: {e}")
         # Continue even if email sending fails
-
+    debug("RETURNING DB_USER")
     return db_user  
 
 # AVATAR MANAGEMENT

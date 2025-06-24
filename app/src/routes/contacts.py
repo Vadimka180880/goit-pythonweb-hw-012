@@ -3,6 +3,7 @@ Routes for managing user contacts: create, read, update, delete, and search cont
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.src.database import get_db
 from app.src.database.models import Contact, User
@@ -19,15 +20,36 @@ router = APIRouter(tags=["contacts"])
 # CREATE CONTACT ENDPOINT
 @router.post("/", response_model=ContactResponse)
 async def create_contact(
-    body: ContactModel,
+    body: ContactCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Create a new contact for the current user.
     """
-    contact = await repository_contacts.create_contact(body, current_user.id, db)
-    return contact
+    try:
+        contact = await repository_contacts.create_contact(body, current_user.id, db)
+    except Exception as e:
+        # If double email — refound 409
+        if "UNIQUE constraint failed" in str(e):
+            raise HTTPException(status_code=409, detail="Contact with this email already exists.")
+        raise
+    first_name, last_name = (contact.name.split(' ', 1) + [""])[:2]
+    data = ContactResponse(
+        id=contact.id,
+        first_name=first_name,
+        last_name=last_name,
+        email=contact.email,
+        phone_number=contact.phone,
+        birthday=body.birthday,
+        additional_info=body.additional_info
+    ).model_dump()
+    if data["birthday"]:
+        data["birthday"] = data["birthday"].isoformat()
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content=data
+    )
 
 # GET CONTACTS ENDPOINT (paginated)
 @router.get("/", response_model=List[ContactResponse])

@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,8 +8,50 @@ from app.src.database.models import User
 from app.src.services.auth import get_current_user
 import redis.asyncio as redis
 from app.src.config.config import settings
+import traceback
+import sys
 
 app = FastAPI()
+print("APP STARTED")
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Custom exception handler for HTTP exceptions.
+
+    Args:
+        request (Request): The request object.
+        exc (HTTPException): The HTTP exception raised.
+
+    Returns:
+        JSONResponse: A JSON response with the exception details.
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+@app.exception_handler(Exception)
+async def custom_exception_handler(request: Request, exc: Exception):
+    """
+    Custom exception handler for general exceptions.
+
+    Args:
+        request (Request): The request object.
+        exc (Exception): The exception raised.
+
+    Returns:
+        JSONResponse: A JSON response indicating an internal server error.
+    """
+    print('EXCEPTION HANDLER TRIGGERED', file=sys.stdout)
+    print(traceback.format_exc(), file=sys.stdout)
+    
+    if hasattr(app, 'logger'):
+        app.logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 # CORS
 app.add_middleware(
@@ -19,10 +62,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ініціалізація Redis
+# Initial Redis
 redis_client = redis.from_url(settings.redis_url)
 
-# Ініціалізація FastAPILimiter
+# Initial FastAPILimiter
 app.state.limiter = FastAPILimiter  
 app.state.redis = redis_client  
 

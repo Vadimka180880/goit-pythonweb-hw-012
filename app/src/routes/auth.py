@@ -10,13 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import jwt
 from jwt.exceptions import PyJWTError as JWTError
 import logging
-from app.src.schemas.users import UserResponse, UserCreate, UserEmailSchema, ResetPasswordSchema
+from app.src.schemas.users import UserResponse, UserCreate, UserEmailSchema, ResetPasswordSchema, RefreshTokenRequest
 from app.src.services.auth import (
     create_access_token,
     verify_password,
     get_password_hash,
     get_current_user,
-    reset_user_password
+    reset_user_password,
+    create_refresh_token,
+    store_refresh_token,
+    revoke_refresh_token,
+    is_refresh_token_active
 )
 from app.src.repository.users import get_user_by_email, update_user_avatar, get_user_by_id
 from app.src.services.email import send_verification_email, send_password_reset_email, create_password_reset_token
@@ -26,6 +30,7 @@ from app.src.database.models import User
 from sqlalchemy.orm import Session 
 from app.src.database.redis import get_redis
 from app.src.database.base import get_db
+from jose import jwt as jose_jwt
 
 router = APIRouter(tags=["auth"])  
 logger = logging.getLogger(__name__)
@@ -44,51 +49,25 @@ async def signup(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Registers a new user.
-
-    Args:
-        user_data (UserCreate): Registration data (email, password).
-        background_tasks (BackgroundTasks): Tasks for sending email in the background.
-        db (AsyncSession): Async database session.
-
-    Returns:
-        UserResponse: New user's data.
-
-    Raises:
-        HTTPException: If the email is already registered or an error occurred.
-    """
+    from app.src.repository.users import create_user
+    from sqlalchemy.exc import IntegrityError
     try:
-        existing_user = await get_user_by_email(user_data.email, db)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Email {user_data.email} already registered. Please use a different email or log in."
-            )
-
-        hashed_password = get_password_hash(user_data.password)
-        new_user = User(
-            email=user_data.email,
-            password=hashed_password,
-            confirmed=False
-        )   
-        db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
-
+        user = await create_user(user_data, db)
         background_tasks.add_task(
             send_verification_email,
-            email=user_data.email,
-            user_id=new_user.id
+            email=user.email,
+            user_id=user.id
         )
-
-        return UserResponse.from_orm(new_user)
-
-    except HTTPException:
-        raise
-    except Exception as e:
+        return UserResponse.from_orm(user)
+    except IntegrityError:
         await db.rollback()
-        logger.error(f"Signup error: {str(e)}")
+        logger.error("SIGNUP IntegrityError: Duplicate email", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this email already exists."
+        )
+    except Exception as e:
+        logger.error(f"SIGNUP EXCEPTION: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create user due to an internal server error."
@@ -104,19 +83,6 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Authenticates a user.
-
-    Args:
-        form_data (OAuth2PasswordRequestForm): Form with email and password.
-        db (AsyncSession): Async database session.
-
-    Returns:
-        dict: Access token and user data.
-
-    Raises:
-        HTTPException: If authentication failed.
-    """
     try:        
         user = await get_user_by_email(form_data.username, db)
         if not user or not verify_password(form_data.password, user.password):
@@ -125,22 +91,24 @@ async def login(
                 detail="Incorrect email or password",
                 headers={"WWW-Authenticate": "Bearer"}
             )
-
         access_token = create_access_token(
             data={"sub": user.email},
-            expires_delta=timedelta(minutes=settings.access_token_expire_minutes)
+            expires_delta=timedelta(minutes=15)
         )
-
+        refresh_token = create_refresh_token({"sub": user.email})
+        # Store refresh token in Redis
+        payload = jose_jwt.decode(refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        await store_refresh_token(payload["jti"], user.email)
         return {
             "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "user": UserResponse.from_orm(user)
         }
-
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Login error: {str(e)}")
+        logger.error(f"LOGIN EXCEPTION: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
@@ -399,22 +367,33 @@ async def reset_password(
     description="Returns new access and refresh tokens using a valid refresh token."
 )
 async def refresh_token(
-    token: str,
+    request: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Refreshes JWT tokens using a valid refresh token.
+    Refreshes JWT tokens using a valid refresh token with rotation and revocation.
     """
     from app.src.services.auth import get_current_user_from_refresh, create_access_token, create_refresh_token
     try:
-        email = await get_current_user_from_refresh(token)
-        from app.src.repository.users import get_user_by_email
-        user = await get_user_by_email(email, db)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        access_token = create_access_token({"sub": user.email})
-        refresh_token = create_refresh_token({"sub": user.email})
-        return {"access_token": access_token, "refresh_token": refresh_token}
+        token = request.token
+        payload = jose_jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid refresh token type")
+        jti = payload.get("jti")
+        email = payload.get("sub")
+        if not jti or not email:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+        # Check if token is active
+        if not await is_refresh_token_active(jti):
+            raise HTTPException(status_code=401, detail="Refresh token revoked or expired")
+        # Revoke old token
+        await revoke_refresh_token(jti)
+        # Issue new tokens
+        access_token = create_access_token({"sub": email}, expires_delta=timedelta(minutes=15))
+        new_refresh_token = create_refresh_token({"sub": email})
+        new_payload = jose_jwt.decode(new_refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        await store_refresh_token(new_payload["jti"], email)
+        return {"access_token": access_token, "refresh_token": new_refresh_token}
     except HTTPException:
         raise
     except Exception as e:

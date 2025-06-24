@@ -7,7 +7,7 @@ from app.src.config.config import settings
 Base = declarative_base()
 
 engine = create_async_engine(
-    settings.async_database_url,
+    settings.effective_async_database_url,
     echo=True
 )
 

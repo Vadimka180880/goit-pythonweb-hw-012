@@ -1,33 +1,42 @@
 import pytest
-from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
-
-TEST_EMAIL = "testuser@example.com"
-TEST_PASSWORD = "testpassword123"
+import uuid
 
 
-def test_signup_new_user():
-    response = client.post(
+@pytest.mark.asyncio
+@pytest.fixture
+def test_email():
+    return f"testuser_{uuid.uuid4()}@example.com"
+
+
+@pytest.mark.asyncio
+async def test_signup_new_user(test_email, async_client):
+    response = await async_client.post(
         "/auth/signup",
-        json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
+        json={"email": test_email, "password": "testpassword123"},
     )
     assert response.status_code in (201, 409)
     if response.status_code == 201:
         data = response.json()
-        assert data["email"] == TEST_EMAIL
+        assert data["email"] == test_email
         assert "id" in data
 
 
-def test_login_user():
-    response = client.post(
+@pytest.mark.asyncio
+async def test_login_user(test_email, async_client):
+    # Signup first
+    await async_client.post(
+        "/auth/signup",
+        json={"email": test_email, "password": "testpassword123"},
+    )
+    # Login
+    response = await async_client.post(
         "/auth/login",
-        data={"username": TEST_EMAIL, "password": TEST_PASSWORD}
+        data={"username": test_email, "password": "testpassword123"},
     )
     assert response.status_code in (200, 401)
-    bad_response = client.post(
+    # Bad password
+    bad_response = await async_client.post(
         "/auth/login",
-        data={"username": TEST_EMAIL, "password": "wrongpass"}
+        data={"username": test_email, "password": "wrongpass"},
     )
     assert bad_response.status_code == 401

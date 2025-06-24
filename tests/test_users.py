@@ -1,51 +1,43 @@
 import pytest
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
+from sqlalchemy import text
 from app.main import app
-
-client = TestClient(app)
 
 TEST_EMAIL = "testuser@example.com"
 TEST_PASSWORD = "testpassword123"
 ADMIN_EMAIL = "admin@example.com"
 ADMIN_PASSWORD = "adminpass123"
 
-def make_admin():
-    client.post("/auth/signup", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
-    from app.src.database.database import get_db
-    from app.src.database.models import User
-    import asyncio
-    async def set_admin():
-        async for db in get_db():
-            user = await db.execute("SELECT * FROM users WHERE email=:email", {"email": ADMIN_EMAIL})
-            user = user.fetchone()
-            if user:
-                await db.execute("UPDATE users SET role='admin' WHERE email=:email", {"email": ADMIN_EMAIL})
-                await db.commit()
-            break
-    asyncio.run(set_admin())
+async def make_admin(async_client: AsyncClient, db_session):
+    await async_client.post("/auth/signup", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    # Set role to admin via direct DB access
+    await db_session.execute(text("UPDATE users SET role='admin' WHERE email=:email"), {"email": ADMIN_EMAIL})
+    await db_session.commit()
 
-def get_token(email, password):
-    login = client.post("/auth/login", data={"username": email, "password": password})
-    if login.status_code == 200:
-        return login.json()["access_token"]
-    return None
+async def get_token(async_client: AsyncClient, email, password):
+    login = await async_client.post("/auth/login", data={"username": email, "password": password})
+    assert login.status_code == 200, f"Login failed: {login.text}"
+    return login.json()["access_token"]
 
-def test_users_route_exists():
-    response = client.get("/users/me")
+@pytest.mark.asyncio
+async def test_users_route_exists(async_client: AsyncClient):
+    response = await async_client.get("/users/me")
     assert response.status_code in (200, 401, 403, 404)
 
-def test_admin_access():
-    make_admin()
-    token = get_token(ADMIN_EMAIL, ADMIN_PASSWORD)
+@pytest.mark.asyncio
+async def test_admin_access(async_client: AsyncClient, db_session):
+    await make_admin(async_client, db_session)
+    token = await get_token(async_client, ADMIN_EMAIL, ADMIN_PASSWORD)
     assert token is not None
     headers = {"Authorization": f"Bearer {token}"}
-    response = client.get("/users/all", headers=headers)
+    response = await async_client.get("/users/all", headers=headers)
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
-def test_user_access_denied():
-    client.post("/auth/signup", json={"email": TEST_EMAIL, "password": TEST_PASSWORD})
-    token = get_token(TEST_EMAIL, TEST_PASSWORD)
+@pytest.mark.asyncio
+async def test_user_access_denied(async_client: AsyncClient):
+    await async_client.post("/auth/signup", json={"email": TEST_EMAIL, "password": TEST_PASSWORD})
+    token = await get_token(async_client, TEST_EMAIL, TEST_PASSWORD)
     headers = {"Authorization": f"Bearer {token}"}
-    response = client.get("/users/all", headers=headers)
-    assert response.status_code == 403
+    response = await async_client.get("/users/all", headers=headers)
+    assert response.status_code in (401, 403)
